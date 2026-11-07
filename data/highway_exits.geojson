@@ -1,0 +1,17 @@
+{
+"type": "FeatureCollection",
+"name": "highway_exits",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{"type":"Feature","properties":{"exit_num":"2B","highway":"Interstate 41","direction":"South"},"geometry":{"type":"Point","coordinates":[400.779556098536375,-81.007944090353774]}},
+{"type":"Feature","properties":{"exit_num":"3","highway":"Interstate 41","direction":"South"},"geometry":{"type":"Point","coordinates":[708.963204944123277,-93.109004258311501]}},
+{"type":"Feature","properties":{"exit_num":"5","highway":"Interstate 41","direction":"South"},"geometry":{"type":"Point","coordinates":[1043.754143602934391,-189.348750626913443]}},
+{"type":"Feature","properties":{"exit_num":"6","highway":"Interstate 41","direction":"South"},"geometry":{"type":"Point","coordinates":[1161.312679264513918,-476.091351951430624]}},
+{"type":"Feature","properties":{"exit_num":"7","highway":"Interstate 41","direction":"South"},"geometry":{"type":"Point","coordinates":[1186.746235623681514,-612.145458310052618]}},
+{"type":"Feature","properties":{"exit_num":"7","highway":"Interstate 41","direction":"North"},"geometry":{"type":"Point","coordinates":[1186.724377718372352,-754.080110320746826]}},
+{"type":"Feature","properties":{"exit_num":"6","highway":"Interstate 41","direction":"North"},"geometry":{"type":"Point","coordinates":[1180.426921125391118,-554.850662360414844]}},
+{"type":"Feature","properties":{"exit_num":"5","highway":"Interstate 41","direction":"North"},"geometry":{"type":"Point","coordinates":[1115.788423871331588,-229.362593507803894]}},
+{"type":"Feature","properties":{"exit_num":"3","highway":"Interstate 41","direction":"North"},"geometry":{"type":"Point","coordinates":[781.919680920536848,-101.686604483609585]}},
+{"type":"Feature","properties":{"exit_num":"2B","highway":"Interstate 41","direction":"North"},"geometry":{"type":"Point","coordinates":[478.115292071216345,-73.256388452601911]}}
+]
+}

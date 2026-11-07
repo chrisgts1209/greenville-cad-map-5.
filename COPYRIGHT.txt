@@ -1,0 +1,12 @@
+Greenville CAD Map
+Copyright (c) 2026 chrisy0227. All rights reserved.
+
+The original Greenville CAD Map viewer, layout, and project materials are
+claimed by chrisy0227, subject to any rights held by third parties in their
+content, game/map assets, or underlying data.
+
+This notice does not grant permission to copy, redistribute, modify, or
+commercially use the original project materials.
+
+Third-party content and underlying data may be subject to separate rights or
+terms. This notice does not claim ownership of third-party materials.

@@ -1,0 +1,188 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Greenville CAD Map</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1118;color:#eef5ff;font:13px Arial,sans-serif}
+#map{position:absolute;inset:0}canvas{width:100%;height:100%;display:block}
+.panel{position:absolute;z-index:5;top:14px;left:14px;width:230px;background:#101923f2;border:1px solid #35475b;border-radius:11px;padding:12px;box-shadow:0 8px 25px #0007}
+h1{font-size:15px;margin:0 0 4px}.sub{font-size:11px;color:#a8b8cb;margin-bottom:12px}.row{display:flex;align-items:center;gap:8px;margin:9px 0}.row input{accent-color:#61aaff}.dot{width:10px;height:10px;border-radius:3px}.hint{border-top:1px solid #35475b;padding-top:9px;margin-top:11px;color:#a8b8cb;font-size:11px}
+</style></head><body>
+<div id="map"><canvas id="c"></canvas></div>
+<aside class="panel"><h1>GREENVILLE CAD MAP</h1><div class="sub">Custom game map · CAD viewer</div>
+<label class="row"><input type="checkbox" data-t="zones" checked><i class="dot" style="background:#65aaff"></i>Postal zones</label>
+<label class="row"><input type="checkbox" data-t="mile" checked><i class="dot" style="background:#70e2a5"></i>Mile markers</label>
+<label class="row"><input type="checkbox" data-t="exits" checked><i class="dot" style="background:#16803d"></i>Highway exits</label>
+<div class="hint">Wheel to zoom · drag to pan · toggle CAD layers above.</div><div style="margin-top:9px;font-size:10px;color:#8294a8">© 2026 chrisy0227 · Greenville CAD Map · All rights reserved</div></aside>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const image=new Image();image.src='map_background.png';
+const files=['postal_zones.geojson','roads.geojson','main_roads.geojson','railroads.geojson','mile_markers.geojson','highway_exits.geojson'];
+let data={}, loaded=false, scale=1, minScale=1, offsetX=0, offsetY=0, dragging=false, lastX=0,lastY=0;
+const show={zones:true,mile:true,exits:true};
+const W=1495,H=1052;
+// Data uses canvas-like source coords: x aligns with PNG pixels; y is negative image pixel y.
+function p(coord){return [coord[0],-coord[1]]}
+function fit(){
+ const dpr=devicePixelRatio||1;canvas.width=innerWidth*dpr;canvas.height=innerHeight*dpr;
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+ minScale=Math.min((innerWidth-36)/W,(innerHeight-36)/H);
+ scale=minScale;offsetX=(innerWidth-W*scale)/2;offsetY=(innerHeight-H*scale)/2;
+ draw();
+}
+function trans(pt){return [offsetX+pt[0]*scale,offsetY+pt[1]*scale]}
+function pathGeom(g,close=false){
+ ctx.beginPath();
+ const lines=g.type==='LineString'?[g.coordinates]:g.type==='MultiLineString'?g.coordinates:g.type==='Polygon'?g.coordinates:g.type==='MultiPolygon'?g.coordinates.flat():[];
+ for(const line of lines){line.forEach((c,i)=>{const [x,y]=trans(p(c));if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});if(close)ctx.closePath()}
+}
+function drawLineFeatures(file,color,width){
+ const d=data[file];if(!d)return;
+ ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,width*scale);ctx.globalAlpha=1;
+ for(const f of d.features){pathGeom(f.geometry);ctx.stroke()}
+}
+function drawRoadNames(file){
+ const d=data[file];if(!d)return;
+ const zoom=scale/minScale;
+ // Map-style labeling: generate candidate labels from road geometry, sort longer
+ // road segments first, then place labels only when they do not collide.
+ const fontSize=Math.max(8,Math.min(14,10.5+Math.log2(Math.max(0.65,zoom))*1.5));
+ ctx.font=`600 ${fontSize}px Arial`;
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ const candidates=[];
+ for(const f of d.features){
+   const name=String(f.properties?.street_name||'').trim();if(!name)continue;
+   const lines=f.geometry.type==='LineString'?[f.geometry.coordinates]:
+     f.geometry.type==='MultiLineString'?f.geometry.coordinates:[];
+   for(const line of lines){
+     if(!line||line.length<2)continue;
+     const pts=line.map(c=>trans(p(c)));
+     let total=0,lengths=[];
+     for(let i=1;i<pts.length;i++){
+       const len=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);
+       lengths.push(len);total+=len;
+     }
+     const textW=ctx.measureText(name).width;
+     // A name needs room to sit along the road. Don't reject it merely because
+     // it is shorter than the text; a centered label can extend slightly past it.
+     if(total<Math.max(22,textW*0.52))continue;
+     // One center label per feature at low zoom; only add spaced repeats on very
+     // long road geometry when zoomed close in.
+     const repeatSpacing=zoom>2.3?Math.max(620,textW*5.5):Infinity;
+     const count=Math.max(1,Math.min(5,Math.floor(total/repeatSpacing)+1));
+     for(let n=0;n<count;n++){
+       const target=count===1?total/2:Math.min(total-textW/2,Math.max(textW/2,total*(n+0.5)/count));
+       let acc=0,seg=0;
+       while(seg<lengths.length-1&&acc+lengths[seg]<target){acc+=lengths[seg];seg++}
+       const segLen=lengths[seg]||1,t=Math.max(0,Math.min(1,(target-acc)/segLen));
+       const a=pts[seg],b=pts[seg+1];
+       const x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t;
+       let angle=Math.atan2(b[1]-a[1],b[0]-a[0]);
+       if(angle>Math.PI/2||angle< -Math.PI/2)angle+=Math.PI;
+       // Keep labels close to the viewport; distant canvas labels aren't useful.
+       if(x < -textW || x > innerWidth+textW || y < -fontSize*2 || y > innerHeight+fontSize*2)continue;
+       candidates.push({name,x,y,angle,w:textW+12,h:fontSize+7,len:total});
+     }
+   }
+ }
+ // Prefer labels on longer road segments. Collision boxes suppress repeated names
+ // and other labels at the current zoom, similar to a vector map label engine.
+ candidates.sort((a,b)=>b.len-a.len);
+ const placed=[];
+ for(const c of candidates){
+   const tooClose=placed.some(q=>
+     Math.abs(c.x-q.x)<(c.w+q.w)*0.52 &&
+     Math.abs(c.y-q.y)<(c.h+q.h)*0.72
+   );
+   if(tooClose)continue;
+   placed.push(c);
+   ctx.save();ctx.translate(c.x,c.y);ctx.rotate(c.angle);
+   ctx.lineWidth=3.2;ctx.strokeStyle='#111a24';ctx.fillStyle='#f7fbff';
+   ctx.strokeText(c.name,0,0);ctx.fillText(c.name,0,0);ctx.restore();
+ }
+}
+function centroid(ring){let x=0,y=0,n=0;for(const c of ring){x+=c[0];y+=-c[1];n++}return [x/n,y/n]}
+function roundRect(x,y,w,h,r){
+ ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+function drawZones(){
+ const d=data['postal_zones.geojson'];if(!d||!show.zones)return;
+ // Declutter postal badges by zoom: one representative per larger screen-space cell
+ // when zoomed out, progressively finer cells as the user zooms in, all badges close in.
+ const zoom=scale/minScale;
+ const cell=zoom<1.35?150:zoom<2?105:zoom<2.8?65:0;
+ const candidates=[];
+ for(const f of d.features){
+   const g=f.geometry;let ring=g.type==='Polygon'?g.coordinates[0]:g.type==='MultiPolygon'?g.coordinates[0][0]:null;if(!ring)continue;
+   const [wx,wy]=centroid(ring),[x,y]=trans([wx,wy]);const label=f.properties?.zone_code;
+   if(label===undefined||label===null||label==='')continue;
+   candidates.push({x,y,label:String(label),wx,wy});
+ }
+ let visible=candidates;
+ if(cell>0){
+   const picked=new Map();
+   for(const c of candidates){
+     const key=Math.floor(c.x/cell)+':'+Math.floor(c.y/cell);
+     // Keep the feature nearest the center of each screen-space cell as its area representative.
+     const cx=(Math.floor(c.x/cell)+.5)*cell,cy=(Math.floor(c.y/cell)+.5)*cell;
+     const dist=(c.x-cx)**2+(c.y-cy)**2;
+     if(!picked.has(key)||dist<picked.get(key).dist)picked.set(key,{...c,dist});
+   }
+   visible=[...picked.values()];
+ }
+ for(const c of visible){
+   const {x,y,label}=c;ctx.save();ctx.globalAlpha=0.5;
+   ctx.font=`bold ${Math.max(10,Math.min(13,11.5*scale))}px Arial`;
+   const w=Math.max(31,ctx.measureText(label).width+12),h=21;
+   roundRect(x-w/2,y-h/2,w,h,4);ctx.fillStyle='#2563eb';ctx.fill();ctx.lineWidth=1.2;ctx.strokeStyle='#dbeafe';ctx.stroke();
+   ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';ctx.fillText(label,x,y);
+   ctx.restore();
+ }
+}
+function drawPoints(file,key,prop,color){
+ const d=data[file];if(!d||!show[key])return;
+ for(const f of d.features){
+   const [x,y]=trans(p(f.geometry.coordinates));const label=f.properties?.[prop];
+   if(label!==undefined&&label!==null&&label!==''){
+     const text=String(label);ctx.font=`bold ${Math.max(11,Math.min(15,13*scale))}px Arial`;
+     const w=Math.max(27,ctx.measureText(text).width+12),h=25;
+     if(key==='mile'){
+       ctx.save();ctx.translate(x,y);ctx.rotate(Math.PI/4);ctx.fillStyle='#16834a';ctx.strokeStyle='#d1fae5';ctx.lineWidth=1.5;ctx.fillRect(-h/2,-h/2,h,h);ctx.strokeRect(-h/2,-h/2,h,h);ctx.restore();
+       ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';ctx.lineWidth=3;ctx.strokeStyle='#064e2b';ctx.strokeText(text,x,y);ctx.fillText(text,x,y);
+     }else{
+       // Highway exit sign: unmistakable green sign with EXIT header and a prominent exit number.
+       const signW=Math.max(42,ctx.measureText(text).width+18), signH=34;
+       const sx=x-signW/2, sy=y-signH/2;
+       roundRect(sx,sy,signW,signH,5);
+       ctx.fillStyle='#176b35';ctx.fill();ctx.lineWidth=2;ctx.strokeStyle='#f0fdf4';ctx.stroke();
+       ctx.textAlign='center';ctx.textBaseline='middle';
+       ctx.font=`700 ${Math.max(8,Math.min(10,9*scale))}px Arial`;
+       ctx.fillStyle='#d9f99d';ctx.fillText('EXIT',x,sy+9);
+       ctx.font=`800 ${Math.max(12,Math.min(16,14*scale))}px Arial`;
+       ctx.fillStyle='#fff';ctx.fillText(text,x,sy+23);
+     }
+   }else{
+     ctx.beginPath();ctx.arc(x,y,Math.max(4,5.2*scale),0,Math.PI*2);ctx.fillStyle=color;ctx.fill();ctx.lineWidth=1.5;ctx.strokeStyle='#111923';ctx.stroke();
+   }
+ }
+}
+function draw(){
+ if(!canvas.width)return;
+ const dpr=devicePixelRatio||1;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,innerWidth,innerHeight);
+ if(image.complete&&image.naturalWidth){ctx.drawImage(image,offsetX,offsetY,W*scale,H*scale)}
+ // context roads + rail; CAD feature layers over background
+ drawLineFeatures('railroads.geojson','#d88be4',1.8);
+ drawLineFeatures('roads.geojson','#b8e5ff',1.6);
+ drawLineFeatures('main_roads.geojson','#ffc95d',2.7);
+ drawRoadNames('roads.geojson');drawRoadNames('main_roads.geojson');
+ drawZones();drawPoints('mile_markers.geojson','mile','MM','#70e2a5');drawPoints('highway_exits.geojson','exits','exit_num','#ff8b6c');
+}
+Promise.all(files.map(async f=>{let r=await fetch('data/'+f);if(!r.ok)throw Error(f+' HTTP '+r.status);data[f]=await r.json()}))
+.then(()=>{loaded=true;image.onload=fit;if(image.complete)fit();})
+.catch(e=>{console.error(e);alert('Could not load map data: '+e.message)});
+window.addEventListener('resize',fit);
+canvas.addEventListener('wheel',e=>{e.preventDefault();const factor=e.deltaY<0?1.15:1/1.15;const mx=e.clientX,my=e.clientY;const px=(mx-offsetX)/scale,py=(my-offsetY)/scale;scale=Math.max(minScale*.7,Math.min(minScale*16,scale*factor));offsetX=mx-px*scale;offsetY=my-py*scale;draw()},{passive:false});
+canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!dragging)return;offsetX+=e.clientX-lastX;offsetY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;draw()});
+canvas.addEventListener('pointerup',()=>dragging=false);canvas.addEventListener('pointercancel',()=>dragging=false);
+document.querySelectorAll('[data-t]').forEach(el=>el.addEventListener('change',()=>{show[el.dataset.t]=el.checked;draw()}));
+</script></body></html>
